@@ -1,0 +1,875 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Garde Hackathon — Intro</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05060a; }
+  body { font-family: "Segoe UI", system-ui, -apple-system, sans-serif; cursor: grab; }
+  body.dragging { cursor: grabbing; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  /* ---------- Tooltips ---------- */
+  #tips { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+  .tip {
+    position: absolute; left: 0; top: 0;
+    transform: translate(-50%, -140%);
+    opacity: 0; will-change: transform, opacity;
+    transition: opacity .12s linear;
+    min-width: 190px; max-width: 300px;
+  }
+  .tip .card {
+    position: relative;
+    background: linear-gradient(160deg, rgba(20,26,40,.92), rgba(11,15,26,.92));
+    border: 1px solid rgba(120,170,255,.35);
+    border-radius: 12px;
+    padding: 12px 15px 13px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.4),
+                inset 0 1px 0 rgba(255,255,255,.06);
+    backdrop-filter: blur(6px);
+  }
+  .tip .k {
+    font-size: 10px; letter-spacing: .22em; text-transform: uppercase;
+    color: #7fb0ff; font-weight: 700; margin-bottom: 5px; display: block;
+  }
+  .tip .t { font-size: 16px; font-weight: 700; color: #f2f6ff; line-height: 1.15; }
+  .tip .b { font-size: 12.5px; color: #a9b6d0; margin-top: 5px; line-height: 1.35; }
+  .tip .card::after {
+    content: ""; position: absolute; left: 26px; bottom: -7px;
+    width: 12px; height: 12px; rotate: 45deg;
+    background: rgba(13,17,28,.92);
+    border-right: 1px solid rgba(120,170,255,.35);
+    border-bottom: 1px solid rgba(120,170,255,.35);
+  }
+  .tip .dot {
+    position: absolute; left: 26px; bottom: -34px;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #7fb0ff; box-shadow: 0 0 12px 2px rgba(127,176,255,.9);
+    transform: translateX(-50%);
+  }
+
+  /* ---------- Overlay UI ---------- */
+  #intro {
+    position: fixed; inset: 0; z-index: 10;
+    background: radial-gradient(120% 120% at 50% 40%, #0a0e1a 0%, #05060a 70%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; transition: opacity 1.1s ease; text-align: center; padding: 24px;
+  }
+  #intro.hide { opacity: 0; pointer-events: none; }
+  #intro .brand {
+    font-size: 11px; letter-spacing: .5em; text-transform: uppercase;
+    color: #6f86b8; font-weight: 700;
+  }
+  #intro h1 {
+    font-size: clamp(30px, 7vw, 68px); font-weight: 800; letter-spacing: -.02em;
+    background: linear-gradient(180deg, #ffffff, #a9c4ff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    line-height: 1;
+  }
+  #intro .sub { font-size: clamp(13px, 2.2vw, 16px); color: #9fb0d4; max-width: 460px; }
+  #start {
+    margin-top: 10px; pointer-events: auto; cursor: pointer;
+    padding: 13px 30px; border-radius: 999px; border: 1px solid rgba(127,176,255,.5);
+    background: linear-gradient(180deg, rgba(127,176,255,.22), rgba(127,176,255,.08));
+    color: #eaf1ff; font-size: 14px; font-weight: 700; letter-spacing: .04em;
+    transition: transform .15s ease, background .15s ease;
+  }
+  #start:hover { transform: translateY(-2px); background: linear-gradient(180deg, rgba(127,176,255,.35), rgba(127,176,255,.14)); }
+
+  #hint {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+    z-index: 8; font-size: 12px; letter-spacing: .06em; color: #7688aa;
+    background: rgba(8,11,20,.5); border: 1px solid rgba(120,150,210,.18);
+    padding: 8px 16px; border-radius: 999px; opacity: 0;
+    transition: opacity .6s ease; pointer-events: none; backdrop-filter: blur(4px);
+  }
+  #hint.show { opacity: 1; }
+  #hint b { color: #b9c9ea; }
+  #vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 6;
+    box-shadow: inset 0 0 220px 40px rgba(0,0,0,.75);
+  }
+</style>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="err" style="position:fixed;left:0;top:0;z-index:99;max-width:100%;
+    font:12px/1.5 monospace;color:#ff9a9a;background:rgba(20,0,0,.85);
+    padding:10px 14px;white-space:pre-wrap;display:none;"></div>
+  <div id="vignette"></div>
+  <div id="tips"></div>
+  <div id="hint"><b>Drag</b> to look around · <b>R</b> to replay the tour</div>
+
+  <div id="intro">
+    <div class="brand">Garde Capital</div>
+    <h1>Hackathon 2026</h1>
+    <div class="sub">A short look around the desk before the doors open. Grab a coffee — we're about to build something.</div>
+    <button id="start">Enter the room ›</button>
+  </div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+/* ---- error surfacing (temporary diagnostics) ---- */
+const errBox = document.getElementById('err');
+function showErr(msg) {
+  errBox.style.display = 'block';
+  errBox.textContent += msg + '\n';
+  console.error(msg);
+}
+addEventListener('error', e => showErr('ERROR: ' + (e.message || e.error) + (e.filename ? ' @ ' + e.filename + ':' + e.lineno : '')));
+addEventListener('unhandledrejection', e => showErr('PROMISE: ' + (e.reason && e.reason.message || e.reason)));
+
+/* ============================================================================
+   EVENT CONTENT — edit everything here. `title`/`body` are the tooltips shown
+   as the camera looks at each object. `look` is what the camera aims at;
+   `anchor` is where the tooltip is pinned in 3D space (auto-defaults to look).
+   ========================================================================== */
+const EVENT = {
+  name: "GARDE HACKATHON",
+  screenTitle: "GARDE\nHACKATHON",
+  screenDate: "JULY 14, 2026",
+};
+
+// Monitor slideshow: a title slide followed by the game's rules.
+const RULES = [
+  "No PII.",
+  "No pulling your own data.",
+  "External skills must be customized or transformed rather than submitted directly.",
+  "Limit cross-talk between teams.",
+  "Your first skill must be chosen in the first 15 minutes.",
+];
+
+// Tutorial cutscene steps (shown after the intro). Each drives an on-screen animation.
+const TUT_STEPS = [
+  "Create a new project in Claude",
+  "Add files to the project",
+  "Use /skill-creator",
+  "Test the skill",
+  "Share the skill",
+];
+
+// Garde Capital stacked logo (inlined so the file stays fully self-contained).
+const SVG_LOGO = `<svg xmlns="http://www.w3.org/2000/svg" width="345.13333" height="118.68" viewBox="0 0 345.13333 118.68"><g transform="matrix(0.13333333,0,0,-0.13333333,0,118.68)"><path d="m 0,103.684 v 0.57 c 0,56.453 43.1992,104.254 103.969,104.254 35.133,0 56.734,-9.789 77.469,-27.36 l -22.465,-26.777 c -15.551,13.242 -30.817,21.598 -56.45,21.598 -37.148,0 -65.3746,-32.543 -65.3746,-71.137 v -0.578 c 0,-41.4727 27.3633,-71.9962 68.5426,-71.9962 19.008,0 36.289,6.0469 48.676,15.2617 V 85.25 h -51.554 v 30.816 h 85.824 V 31.3945 C 168.766,14.4023 140.254,0 104.543,0 41.4727,0 0,44.9297 0,103.684" style="fill:#3b7a38"/><path d="M 374.129,83.5234 339.281,164.156 304.723,83.5234 Z M 323.441,206.496 H 356.27 L 444.977,3.45703 H 407.539 L 387.09,52.1289 H 291.762 L 271.027,3.45703 H 234.738 L 323.441,206.496" style="fill:#3b7a38"/><path d="m 589.863,105.121 c 25.348,0 41.469,13.246 41.469,33.695 v 0.579 c 0,21.593 -15.551,33.406 -41.754,33.406 h -51.555 v -67.68 z m -87.261,99.938 h 89.859 c 25.34,0 45.211,-7.489 58.172,-20.161 10.656,-10.945 16.703,-25.921 16.703,-43.492 v -0.57 c 0,-33.125 -19.871,-52.9962 -48.098,-61.0626 L 673.672,3.45703 H 631.91 L 582.375,73.7266 h -0.57 -43.782 V 3.45703 H 502.602 V 205.059" style="fill:#3b7a38"/><path d="m 814.809,35.7148 c 42.339,0 69.988,28.5079 69.988,67.9692 v 0.57 c 0,39.461 -27.649,68.547 -69.988,68.547 H 775.063 V 35.7148 Z M 739.641,205.059 h 75.168 c 63.359,0 107.129,-43.493 107.129,-100.227 v -0.578 C 921.938,47.5195 878.168,3.45703 814.809,3.45703 H 739.641 V 205.059" style="fill:#3b7a38"/><path d="m 982.156,205.059 h 149.474 v -31.684 h -114.05 v -52.41 h 101.09 V 89.2813 H 1017.58 V 35.1328 h 115.49 V 3.45703 H 982.156 V 205.059" style="fill:#3b7a38"/><path d="m 1197.6,103.684 v 0.57 c 0,57.023 42.62,104.254 101.95,104.254 36.58,0 58.47,-12.957 78.63,-31.965 l -15.55,-16.703 c -17,16.129 -36.01,27.644 -63.37,27.644 -44.63,0 -78.04,-36.281 -78.04,-82.652 v -0.578 c 0,-46.6524 33.69,-83.2267 78.04,-83.2267 27.65,0 45.79,10.6563 65.1,29.0899 l 14.97,-14.6914 C 1358.31,14.1133 1335.27,0 1298.69,0 1240.51,0 1197.6,45.7891 1197.6,103.684" style="fill:#100f0d"/><path d="M 1578.65,77.1836 1532.86,180 1486.78,77.1836 Z m -56.16,129.3124 h 21.31 L 1635.67,3.45703 h -24.48 L 1587.58,56.7344 H 1477.85 L 1453.94,3.45703 h -23.32 l 91.87,203.03897" style="fill:#100f0d"/><path d="m 1765.29,95.3281 c 33.4,0 55.29,17.8599 55.29,44.3519 v 0.578 c 0,28.797 -21.6,43.769 -54.14,43.769 h -50.97 V 95.3281 Z m -72.58,109.7309 h 75.46 c 45.5,0 75.45,-24.2 75.45,-63.942 v -0.57 c 0,-43.4923 -36.28,-65.9493 -79.19,-65.9493 h -48.96 V 3.45703 h -22.76 V 205.059" style="fill:#100f0d"/><path d="m 1915.93,205.059 h 22.75 V 3.45703 h -22.75 V 205.059" style="fill:#100f0d"/><path d="m 2079.81,184.027 h -67.68 v 21.032 h 158.4 v -21.032 h -67.68 V 3.45703 h -23.04 V 184.027" style="fill:#100f0d"/><path d="M 2338.16,77.1836 2292.37,180 2246.29,77.1836 Z m -56.15,129.3124 h 21.31 L 2395.18,3.45703 h -24.47 l -23.62,53.27737 h -109.72 l -23.9,-53.27737 h -23.33 l 91.87,203.03897" style="fill:#100f0d"/><path d="m 2452.23,205.059 h 22.75 V 24.4805 h 113.47 V 3.45703 H 2452.23 V 205.059" style="fill:#100f0d"/><path d="m 1272.06,487.109 v -94.195 l 236.7,115.934 v 95.406 l -236.7,-117.145" style="fill:#3b81b0"/><path d="M 1272.06,675.215 V 581.02 l 142.51,71.25 v 95.406 l -142.51,-72.461" style="fill:#3b7a38"/><path d="M 1272.06,769.355 V 675.16 l -89.04,44.07 v 95.403 l 89.04,-45.278" style="fill:#3b81b0"/><path d="m 1272.06,581.32 v -94.195 l -183.56,91.77 v 95.406 l 183.56,-92.981" style="fill:#3b7a38"/><path d="m 1272.06,863.559 v -94.2 l 51.93,25.364 v 95.402 l -51.93,-26.566" style="fill:#3b7a38"/><path d="m 1272.06,393.211 v -94.195 l -51.93,25.359 v 95.402 l 51.93,-26.566" style="fill:#3b7a38"/></g></svg>`;
+
+// Reused 3D positions for objects on the desk (metres; desk top ≈ y=0).
+const P = {
+  monitor:  new THREE.Vector3( 0.00, 0.30, -0.40),
+  sticky:   new THREE.Vector3( 0.34, 0.34, -0.37),
+  keyboard: new THREE.Vector3( 0.00, 0.05,  0.06),
+  mouse:    new THREE.Vector3( 0.40, 0.05,  0.10),
+  mug:      new THREE.Vector3(-0.46, 0.10, -0.04),
+  lamp:     new THREE.Vector3(-0.55, 0.60, -0.22),
+  notebook: new THREE.Vector3( 0.42, 0.06, -0.20),
+  plant:    new THREE.Vector3( 0.66, 0.16, -0.30),
+  phone:    new THREE.Vector3( 0.10, 0.03,  0.34),
+};
+
+// The camera slowly pans across these, left → right, then back again (ping-pong).
+// Order them by their left-to-right position on the desk for a smooth sweep.
+const STOPS = [
+  { look: P.lamp,     k: "Grind",         t: "Burn the midnight oil", b: "Prizes for the boldest builds." },
+  { look: P.mug,      k: "Fuel",          t: "Coffee's on us",        b: "Snacks & endless caffeine provided." },
+  { look: P.keyboard, k: "Build",         t: "Bring any stack",       b: "Any language, any framework." },
+  { look: P.monitor,  k: "The rules",     t: "July 14, 2026",         b: "One day to build. Rules are on the screen." },
+  { look: P.notebook, k: "Ideate",        t: "Start with a sketch",   b: "Best ideas fit on one page." },
+  { look: P.plant,    k: "Grow",          t: "Mentors on hand",       b: "Experts circulating all day." },
+  { look: P.phone,    k: "RSVP",          t: "Save your seat",        b: "Reply to the invite — spots are limited." },
+];
+STOPS.forEach(s => { s.anchor = s.anchor || s.look; });
+
+// Monitor slideshow slides: a title card, then one per rule. Loops.
+const SLIDES = [{ type: 'title' }].concat(RULES.map((r, i) => ({ type: 'rule', n: i + 1, text: r })));
+let screenCanvas, screenCtx, screenTex; // kept for per-slide redraws
+
+/* ============================================================================
+   RENDERER / SCENE / CAMERA
+   ========================================================================== */
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.3;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0f1c);
+scene.fog = new THREE.Fog(0x0a0f1c, 3.0, 8.0);
+
+const EYE = new THREE.Vector3(0.0, 0.52, 0.82); // seated eye position
+const camera = new THREE.PerspectiveCamera(46, innerWidth / innerHeight, 0.01, 100);
+camera.position.copy(EYE);
+camera.lookAt(P.monitor);
+
+/* ============================================================================
+   LIGHTING
+   ========================================================================== */
+scene.add(new THREE.HemisphereLight(0x8098c8, 0x1a2030, 1.6));
+scene.add(new THREE.AmbientLight(0x404a66, 1.2));
+
+// Cool moonlight through the window.
+const moon = new THREE.DirectionalLight(0x8fb0ff, 1.4);
+moon.position.set(-2.5, 2.2, -3.0);
+scene.add(moon);
+
+// Warm desk-lamp glow.
+const lampLight = new THREE.PointLight(0xffb066, 6.0, 4.0, 1.7);
+lampLight.position.set(-0.5, 0.5, -0.18);
+lampLight.castShadow = true;
+lampLight.shadow.mapSize.set(1024, 1024);
+lampLight.shadow.bias = -0.0006;
+scene.add(lampLight);
+
+// Cool spill from the monitor onto the desk / user.
+const screenLight = new THREE.PointLight(0x5aa0ff, 1.3, 2.5, 1.6);
+screenLight.position.set(0, 0.30, -0.28);
+scene.add(screenLight);
+
+// Soft fill so nothing reads as pure black.
+const fill = new THREE.PointLight(0xbfd0ff, 2.5, 6.0, 1.2);
+fill.position.set(0.2, 0.9, 0.9);
+scene.add(fill);
+
+/* ============================================================================
+   MATERIALS (all procedural — no external assets)
+   ========================================================================== */
+const matDesk   = new THREE.MeshStandardMaterial({ color: 0x7a5637, roughness: 0.65, metalness: 0.05 });
+const matFloor  = new THREE.MeshStandardMaterial({ color: 0x2a2f3c, roughness: 0.9 });
+const matWall   = new THREE.MeshStandardMaterial({ color: 0x39414f, roughness: 1.0, side: THREE.DoubleSide });
+const matDark   = new THREE.MeshStandardMaterial({ color: 0x2b2f38, roughness: 0.5, metalness: 0.4 });
+const matPlastic= new THREE.MeshStandardMaterial({ color: 0x3a404c, roughness: 0.55, metalness: 0.2 });
+const matMetal  = new THREE.MeshStandardMaterial({ color: 0xaab0ba, roughness: 0.3, metalness: 0.9 });
+const matKey    = new THREE.MeshStandardMaterial({ color: 0x4a5060, roughness: 0.5 });
+
+function box(w, h, d, mat, x, y, z) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; scene.add(m);
+  return m;
+}
+function cyl(rt, rb, h, mat, x, y, z, seg = 24) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
+  m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; scene.add(m);
+  return m;
+}
+
+/* ---------- Room (enclosed, cozy) ---------- */
+const matCeil = new THREE.MeshStandardMaterial({ color: 0x2b3140, roughness: 1.0, side: THREE.DoubleSide });
+box(4.4, 0.02, 4.2, matFloor, 0, -0.75, -0.2);   // floor
+box(4.4, 0.02, 4.2, matCeil, 0, 1.75, -0.2);     // ceiling
+box(4.4, 2.55, 0.1, matWall, 0, 0.50, -1.35);    // back wall
+box(4.4, 2.55, 0.1, matWall, 0, 0.50,  1.45);    // front wall (behind camera)
+box(0.1, 2.55, 4.2, matWall, -2.15, 0.50, -0.2); // left wall
+box(0.1, 2.55, 4.2, matWall,  2.15, 0.50, -0.2); // right wall
+
+/* ---------- Wall poster (event branding) ---------- */
+const posterTex = makePosterTexture();
+const poster = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.95),
+  new THREE.MeshStandardMaterial({ map: posterTex, roughness: 0.6, emissive: 0xffffff, emissiveMap: posterTex, emissiveIntensity: 0.12 }));
+poster.position.set(1.15, 0.75, -1.275); scene.add(poster); // stand off the wall to avoid z-fighting
+box(0.76, 1.01, 0.02, new THREE.MeshStandardMaterial({ color: 0x11141c, roughness: 0.5 }), 1.15, 0.75, -1.29);
+
+/* ---------- Desk ---------- */
+box(1.9, 0.05, 1.05, matDesk, 0, -0.025, -0.05);
+[[-0.85, -0.45], [0.85, -0.45], [-0.85, 0.4], [0.85, 0.4]].forEach(([x, z]) =>
+  box(0.06, 0.72, 0.06, matDark, x, -0.41, z));
+
+/* ---------- Monitor ---------- */
+box(0.10, 0.02, 0.22, matDark, 0, -0.005, -0.40);        // base
+cyl(0.02, 0.02, 0.07, matMetal, 0, 0.04, -0.42);          // neck (top meets screen bottom)
+const bezel = box(0.86, 0.50, 0.03, matDark, 0, 0.30, -0.42);
+// Screen — canvas texture (emissive so it glows and blooms). Assigns module `screenTex`.
+makeScreenTexture();
+const screenMat = new THREE.MeshStandardMaterial({
+  map: screenTex, emissive: 0xffffff, emissiveMap: screenTex, emissiveIntensity: 0.5, roughness: 0.55,
+});
+const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.80, 0.45), screenMat);
+screen.position.set(0, 0.30, -0.398); // in front of the bezel face to avoid z-fighting
+scene.add(screen);
+
+/* ---------- Folder (tutorial step 2: fed into the top of the monitor) ---------- */
+const folderMat = new THREE.MeshStandardMaterial({ color: 0xe0b45a, roughness: 0.7, transparent: true, opacity: 1 });
+const folder = new THREE.Group();
+{
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.15, 0.02), folderMat);
+  const tab = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.035, 0.02), folderMat);
+  tab.position.set(-0.06, 0.09, 0);
+  const paper = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.13, 0.006),
+    new THREE.MeshStandardMaterial({ color: 0xf4f0e6, roughness: 0.85 }));
+  paper.position.set(0.01, 0.02, 0.02); // clearly in front of the body face (no z-fighting)
+  folder.add(body, tab, paper);
+}
+folder.position.set(0, 0.72, -0.32); // in front of the screen plane to avoid z-fighting
+folder.rotation.x = -0.35;
+folder.visible = false;
+scene.add(folder);
+
+/* ---------- Keyboard ---------- */
+box(0.46, 0.02, 0.16, matPlastic, 0, 0.01, 0.06);
+for (let r = 0; r < 4; r++)
+  for (let c = 0; c < 13; c++)
+    box(0.026, 0.012, 0.026, matKey, -0.21 + c * 0.0337, 0.028, 0.0 + r * 0.035);
+
+/* ---------- Mouse ---------- */
+const mouse3d = new THREE.Mesh(new THREE.SphereGeometry(0.05, 20, 12), matPlastic);
+mouse3d.scale.set(0.7, 0.45, 1.1); mouse3d.position.set(0.40, 0.028, 0.10);
+mouse3d.castShadow = true; scene.add(mouse3d);
+
+/* ---------- Coffee mug + faux steam ---------- */
+cyl(0.05, 0.045, 0.11, new THREE.MeshStandardMaterial({ color: 0xb63b2e, roughness: 0.4 }), -0.46, 0.055, -0.04);
+const coffee = new THREE.Mesh(new THREE.CircleGeometry(0.045, 24),
+  new THREE.MeshStandardMaterial({ color: 0x1c0f07, roughness: 0.2 }));
+coffee.rotation.x = -Math.PI / 2; coffee.position.set(-0.46, 0.108, -0.04); scene.add(coffee);
+const handle = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.008, 10, 20),
+  new THREE.MeshStandardMaterial({ color: 0xb63b2e, roughness: 0.4 }));
+handle.position.set(-0.40, 0.055, -0.04); scene.add(handle);
+
+/* ---------- Notebook + pen ---------- */
+box(0.20, 0.02, 0.26, new THREE.MeshStandardMaterial({ color: 0xe9e6da, roughness: 0.85 }), 0.42, 0.035, -0.20);
+box(0.20, 0.006, 0.26, new THREE.MeshStandardMaterial({ color: 0x2a3a6a, roughness: 0.6 }), 0.42, 0.05, -0.20);
+const pen = cyl(0.006, 0.006, 0.17, new THREE.MeshStandardMaterial({ color: 0x111318, roughness: 0.4 }), 0.44, 0.055, -0.16);
+pen.rotation.set(0, 0.5, Math.PI / 2 + 0.1);
+
+/* ---------- Desk lamp (articulated) ---------- */
+const lampMat = new THREE.MeshStandardMaterial({ color: 0x2c2f36, roughness: 0.4, metalness: 0.7 });
+cyl(0.07, 0.09, 0.02, lampMat, -0.62, 0.01, -0.20);
+const arm1 = cyl(0.012, 0.012, 0.32, lampMat, -0.62, 0.17, -0.20); arm1.rotation.z = 0.35;
+const arm2 = cyl(0.012, 0.012, 0.30, lampMat, -0.55, 0.42, -0.20); arm2.rotation.z = -0.6;
+const head = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.12, 24, 1, true), lampMat);
+head.position.set(-0.5, 0.55, -0.20); head.rotation.set(0.6, 0, 0.9); head.castShadow = true; scene.add(head);
+const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 16),
+  new THREE.MeshStandardMaterial({ color: 0xffdca0, emissive: 0xffb066, emissiveIntensity: 3 }));
+bulb.position.set(-0.5, 0.52, -0.17); scene.add(bulb);
+
+/* ---------- Potted plant ---------- */
+cyl(0.07, 0.05, 0.13, new THREE.MeshStandardMaterial({ color: 0x6b4a34, roughness: 0.9 }), 0.66, 0.065, -0.30);
+const leafMat = new THREE.MeshStandardMaterial({ color: 0x2f7d4f, roughness: 0.8 });
+for (let i = 0; i < 7; i++) {
+  const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 10), leafMat);
+  leaf.scale.set(0.5, 1.3, 0.5);
+  leaf.position.set(0.66 + Math.cos(i / 7 * Math.PI * 2) * 0.04, 0.17 + Math.random() * 0.05, -0.30 + Math.sin(i / 7 * Math.PI * 2) * 0.04);
+  leaf.rotation.set((Math.random() - 0.5) * 0.6, i, (Math.random() - 0.5) * 0.6);
+  leaf.castShadow = true; scene.add(leaf);
+}
+
+/* ---------- Phone ---------- */
+const phone = box(0.075, 0.008, 0.15, new THREE.MeshStandardMaterial({ color: 0x05060a, roughness: 0.25, metalness: 0.5 }), 0.10, 0.006, 0.34);
+const phoneScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.13),
+  new THREE.MeshStandardMaterial({ color: 0x0a1830, emissive: 0x123a7a, emissiveIntensity: 0.6 }));
+phoneScreen.rotation.x = -Math.PI / 2; phoneScreen.position.set(0.10, 0.011, 0.34); scene.add(phoneScreen);
+
+/* ---------- Window on the back wall (skyline painted on the glass) ---------- */
+const WIN_X = -1.05, WIN_Y = 0.85, WIN_Z = -1.30;
+const skyTex = makeSkylineTexture();
+const glass = new THREE.Mesh(new THREE.PlaneGeometry(1.22, 1.12),
+  new THREE.MeshStandardMaterial({ map: skyTex, emissive: 0xffffff, emissiveMap: skyTex, emissiveIntensity: 0.9, roughness: 0.2 }));
+glass.position.set(WIN_X, WIN_Y, WIN_Z + 0.01); scene.add(glass);
+box(1.34, 1.24, 0.05, new THREE.MeshStandardMaterial({ color: 0x1b1f28, roughness: 0.8 }), WIN_X, WIN_Y, WIN_Z); // frame
+box(1.22, 0.03, 0.03, matDark, WIN_X, WIN_Y, WIN_Z + 0.02); // mullion H
+box(0.03, 1.12, 0.03, matDark, WIN_X, WIN_Y, WIN_Z + 0.02); // mullion V
+
+/* ============================================================================
+   PROCEDURAL SCREEN TEXTURE
+   ========================================================================== */
+function makeScreenTexture() {
+  screenCanvas = document.createElement('canvas'); screenCanvas.width = 1024; screenCanvas.height = 576;
+  screenCtx = screenCanvas.getContext('2d');
+  screenTex = new THREE.CanvasTexture(screenCanvas);
+  screenTex.colorSpace = THREE.SRGBColorSpace;
+  drawSlide(0, 1);
+  return screenTex;
+}
+
+function wrapText(g, text, maxWidth) {
+  const words = text.split(' '); const lines = []; let line = '';
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (g.measureText(test).width > maxWidth && line) { lines.push(line); line = w; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function drawSlide(i, alpha) {
+  const g = screenCtx, W = 1024, H = 576;
+  const slide = SLIDES[i];
+  // background (fully opaque)
+  const grad = g.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0a1226'); grad.addColorStop(1, '#06162e');
+  g.fillStyle = grad; g.fillRect(0, 0, W, H);
+  g.strokeStyle = 'rgba(90,160,255,.07)'; g.lineWidth = 1;
+  for (let x = 0; x < W; x += 48) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+  for (let y = 0; y < H; y += 48) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+
+  g.save();
+  g.globalAlpha = alpha;
+  g.translate(0, (1 - alpha) * 16); // subtle slide-up on transition
+
+  if (slide.type === 'title') {
+    g.textAlign = 'center';
+    g.fillStyle = '#eaf2ff'; g.font = '800 118px "Segoe UI", sans-serif';
+    EVENT.screenTitle.split('\n').forEach((ln, k) => g.fillText(ln, W / 2, 210 + k * 118));
+    g.fillStyle = '#5aa0ff'; g.fillRect(W / 2 - 190, 450, 380, 6);
+    g.fillStyle = '#9fc2ff'; g.font = '600 44px "Segoe UI", sans-serif';
+    g.fillText(EVENT.screenDate, W / 2, 515);
+  } else {
+    // header
+    g.textAlign = 'left';
+    g.fillStyle = '#5aa0ff'; g.font = '700 30px "Segoe UI", sans-serif';
+    g.fillText('HACKATHON RULES', 80, 90);
+    g.strokeStyle = 'rgba(90,160,255,.4)'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(80, 112); g.lineTo(W - 80, 112); g.stroke();
+    // big rule number
+    g.fillStyle = 'rgba(90,160,255,.9)'; g.font = '800 90px "Segoe UI", sans-serif';
+    g.fillText(slide.n + '.', 80, 250);
+    // rule text (wrapped)
+    g.fillStyle = '#eef3ff'; g.font = '600 56px "Segoe UI", sans-serif';
+    const lines = wrapText(g, slide.text, W - 220);
+    lines.forEach((ln, k) => g.fillText(ln, 210, 215 + k * 66));
+  }
+  g.restore();
+
+  // progress dots (opaque, so they don't flicker during fade)
+  const n = SLIDES.length, gap = 26, total = (n - 1) * gap, startX = W / 2 - total / 2;
+  for (let d = 0; d < n; d++) {
+    g.beginPath(); g.arc(startX + d * gap, H - 34, d === i ? 7 : 4, 0, Math.PI * 2);
+    g.fillStyle = d === i ? '#7fb0ff' : 'rgba(127,176,255,.3)'; g.fill();
+  }
+  screenTex.needsUpdate = true;
+}
+
+/* ============================================================================
+   TUTORIAL SCREEN ANIMATIONS (drawn on the monitor during the cutscene)
+   ========================================================================== */
+const CLAY = '#d97757', GREEN = '#5fb867', INK = '#e6ecf7', DIM = '#8fa0b6';
+function rr(g, x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+function cursor(g, x, y, click) {
+  g.save(); g.translate(x, y);
+  g.fillStyle = '#fff'; g.strokeStyle = '#111'; g.lineWidth = 2.5; g.lineJoin = 'round';
+  g.beginPath(); g.moveTo(0, 0); g.lineTo(0, 30); g.lineTo(8, 23); g.lineTo(14, 34);
+  g.lineTo(19, 31); g.lineTo(13, 21); g.lineTo(23, 21); g.closePath(); g.fill(); g.stroke();
+  if (click) { g.strokeStyle = 'rgba(217,119,87,.9)'; g.lineWidth = 3; g.beginPath(); g.arc(6, 6, 18, 0, Math.PI * 2); g.stroke(); }
+  g.restore();
+}
+function appFrame(g, title) {
+  g.fillStyle = '#14161c'; g.fillRect(0, 0, 1024, 576);
+  g.fillStyle = '#1c1f27'; g.fillRect(0, 0, 1024, 74);
+  ['#e06c5b', '#e0b24f', '#5fb867'].forEach((c, i) => { g.fillStyle = c; g.beginPath(); g.arc(34 + i * 30, 37, 9, 0, Math.PI * 2); g.fill(); });
+  g.textAlign = 'left'; g.fillStyle = '#aeb8cc'; g.font = '600 30px "Segoe UI",sans-serif'; g.fillText(title, 150, 47);
+  g.fillStyle = CLAY; g.fillRect(0, 74, 1024, 3);
+}
+function tutDots(g, idx) {
+  const n = 5, gap = 30, sx = 512 - (n - 1) * gap / 2;
+  for (let d = 0; d < n; d++) { g.beginPath(); g.arc(sx + d * gap, 540, d === idx ? 7 : 4, 0, Math.PI * 2); g.fillStyle = d === idx ? CLAY : 'rgba(217,119,87,.3)'; g.fill(); }
+}
+
+function tStep1(g, tp) { // Create a new project
+  appFrame(g, 'Claude  ·  Projects');
+  g.textAlign = 'left'; g.fillStyle = '#6f7a90'; g.font = '500 26px "Segoe UI",sans-serif';
+  g.fillText('Start something new', 60, 150);
+  const bw = 360, bh = 96, bx = (1024 - bw) / 2, by = 235;
+  const pulse = tp < 0.68 ? 1 + 0.02 * Math.sin(tp * 34) : 1;
+  g.save(); g.translate(512, by + bh / 2); g.scale(pulse, pulse); g.translate(-512, -(by + bh / 2));
+  g.fillStyle = (tp > 0.68 && tp < 0.8) ? '#a4471f' : '#c05a30'; rr(g, bx, by, bw, bh, 18); g.fill();
+  g.textAlign = 'center'; g.font = '800 42px "Segoe UI",sans-serif';
+  g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = 6; g.shadowOffsetY = 2;
+  g.fillStyle = '#ffffff'; g.fillText('+  New Project', 512, by + bh / 2 + 15);
+  g.shadowColor = 'transparent'; g.shadowBlur = 0; g.shadowOffsetY = 0; g.restore();
+  if (tp > 0.42) { const a = Math.min(1, (tp - 0.42) / 0.26); cursor(g, 700 - a * 140, 430 - a * 130, tp > 0.68 && tp < 0.82); }
+  if (tp > 0.85) { g.fillStyle = GREEN; g.textAlign = 'center'; g.font = '600 30px "Segoe UI",sans-serif'; g.fillText('✓  Project created', 512, 470); }
+  tutDots(g, 0); screenTex.needsUpdate = true;
+}
+function tStep2(g, tp) { // Add files
+  appFrame(g, 'Claude  ·  Project files');
+  g.textAlign = 'left'; g.fillStyle = '#6f7a90'; g.font = '500 26px "Segoe UI",sans-serif';
+  g.fillText('Adding files…', 60, 150);
+  const files = ['data_schema.md', 'style_guide.pdf', 'examples.csv', 'api_notes.txt', 'template.docx'];
+  for (let i = 0; i < files.length; i++) {
+    const a = Math.max(0, Math.min(1, tp * 6.2 - i));
+    if (a <= 0) continue;
+    const y = 180 + i * 66; g.globalAlpha = a;
+    g.fillStyle = '#1b1e26'; rr(g, 60, y, 904, 54, 10); g.fill();
+    g.fillStyle = CLAY; rr(g, 80, y + 12, 30, 30, 5); g.fill();
+    g.fillStyle = '#cdd6e6'; g.font = '500 26px "Segoe UI",sans-serif'; g.textAlign = 'left'; g.fillText(files[i], 130, y + 35);
+    g.fillStyle = GREEN; g.textAlign = 'right'; g.font = '500 22px "Segoe UI",sans-serif'; g.fillText('added', 944, y + 35);
+    g.globalAlpha = 1;
+  }
+  tutDots(g, 1); screenTex.needsUpdate = true;
+}
+function tStep3(g, tp) { // Use /skill-creator
+  appFrame(g, 'Claude');
+  g.textAlign = 'left'; g.fillStyle = '#6f7a90'; g.font = '500 26px "Segoe UI",sans-serif';
+  g.fillText('Ask Claude to build your skill', 60, 160);
+  const full = '/skill-creator build my skill', cmd = '/skill-creator';
+  const n = Math.min(full.length, Math.floor(tp * 1.3 * full.length));
+  const typed = full.slice(0, n);
+  const bx = 60, by = 430, bw = 904, bh = 86;
+  g.fillStyle = '#1b1e26'; rr(g, bx, by, bw, bh, 16); g.fill();
+  g.strokeStyle = CLAY; g.lineWidth = 2; rr(g, bx, by, bw, bh, 16); g.stroke();
+  g.textAlign = 'left'; g.font = '500 34px "Consolas","Segoe UI",monospace';
+  let x = bx + 28; const ty = by + 55;
+  const cmdPart = typed.slice(0, Math.min(typed.length, cmd.length));
+  g.fillStyle = '#e0a95e'; g.fillText(cmdPart, x, ty); x += g.measureText(cmdPart).width;
+  if (typed.length > cmd.length) { const rest = typed.slice(cmd.length); g.fillStyle = INK; g.fillText(rest, x, ty); x += g.measureText(rest).width; }
+  if (Math.floor(tp * 22) % 2 === 0) { g.fillStyle = INK; g.fillRect(x + 4, ty - 28, 3, 34); }
+  if (n > 1 && n <= cmd.length) { g.fillStyle = '#222834'; rr(g, bx, by - 72, 380, 56, 10); g.fill(); g.fillStyle = '#e0a95e'; g.font = '500 28px "Consolas",monospace'; g.fillText('/skill-creator', bx + 20, by - 34); }
+  tutDots(g, 2); screenTex.needsUpdate = true;
+}
+function tStep4(g, tp) { // Test the skill
+  appFrame(g, 'Claude  ·  Building skill');
+  const logs = ['› Reading project files…', '› Analyzing examples.csv', '› Drafting SKILL.md',
+    '› Generating skill scaffold', '› Writing scripts/run.py', '› Validating frontmatter…',
+    '› Running test cases', '› 12 / 12 checks passed'];
+  if (tp < 0.72) {
+    const shown = Math.floor((tp / 0.72) * logs.length * 1.15);
+    g.textAlign = 'left'; g.font = '500 28px "Consolas",monospace';
+    for (let i = 0; i < logs.length && i <= shown; i++) { g.fillStyle = i === shown ? INK : DIM; g.fillText(logs[i], 70, 150 + i * 48); }
+  } else {
+    const a = Math.min(1, (tp - 0.72) / 0.2); g.globalAlpha = a;
+    g.fillStyle = GREEN; g.beginPath(); g.arc(512, 235, 70, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#fff'; g.lineWidth = 10; g.lineCap = 'round'; g.beginPath();
+    g.moveTo(482, 237); g.lineTo(505, 261); g.lineTo(545, 211); g.stroke();
+    g.fillStyle = INK; g.textAlign = 'center'; g.font = '700 44px "Segoe UI",sans-serif'; g.fillText('Skill ready', 512, 355);
+    g.fillStyle = DIM; g.font = '500 28px "Segoe UI",sans-serif'; g.fillText('All 12 tests passed', 512, 402);
+    g.globalAlpha = 1;
+  }
+  tutDots(g, 3); screenTex.needsUpdate = true;
+}
+function tStep5(g, tp) { // Share the skill
+  appFrame(g, 'Claude  ·  my-skill');
+  g.textAlign = 'center';
+  if (tp < 0.78) {
+    const a = Math.min(1, tp / 0.22); const bw = 340, bh = 100, bx = (1024 - bw) / 2, by = 225;
+    g.save(); g.globalAlpha = a;
+    g.fillStyle = (tp > 0.55 && tp < 0.68) ? '#2a7645' : '#358a4f'; rr(g, bx, by, bw, bh, 20); g.fill();
+    g.font = '800 42px "Segoe UI",sans-serif';
+    g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = 6; g.shadowOffsetY = 2;
+    g.fillStyle = '#ffffff'; g.fillText('Share Skill', 512, by + bh / 2 + 15);
+    g.shadowColor = 'transparent'; g.shadowBlur = 0; g.shadowOffsetY = 0;
+    g.restore();
+    if (tp > 0.38) { const c = Math.min(1, (tp - 0.38) / 0.16); cursor(g, 680 - c * 140, 420 - c * 120, tp > 0.55 && tp < 0.7); }
+  } else {
+    const a = Math.min(1, (tp - 0.78) / 0.18); g.globalAlpha = a;
+    g.fillStyle = GREEN; g.textAlign = 'center'; g.font = '700 46px "Segoe UI",sans-serif'; g.fillText('✓  Shared!', 512, 245);
+    const cw = 560, cx = (1024 - cw) / 2;
+    g.fillStyle = '#1b1e26'; rr(g, cx, 295, cw, 66, 12); g.fill();
+    g.fillStyle = '#8fb4ff'; g.font = '500 28px "Consolas",monospace'; g.fillText('claude.ai/skills/my-skill', 512, 337);
+    g.globalAlpha = 1;
+  }
+  tutDots(g, 4); screenTex.needsUpdate = true;
+}
+const TUT_DRAW = [tStep1, tStep2, tStep3, tStep4, tStep5];
+function drawTutorial(step, tp) { TUT_DRAW[step](screenCtx, tp); }
+
+function makeSkylineTexture() {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 512;
+  const g = c.getContext('2d');
+  const sky = g.createLinearGradient(0, 0, 0, 512);
+  sky.addColorStop(0, '#0a1330'); sky.addColorStop(0.6, '#122048'); sky.addColorStop(1, '#1c2c55');
+  g.fillStyle = sky; g.fillRect(0, 0, 512, 512);
+  // moon
+  g.fillStyle = '#dfe8ff'; g.beginPath(); g.arc(410, 90, 34, 0, Math.PI * 2); g.fill();
+  // buildings + lit windows (deterministic-ish via index math, no Math.random needed at draw)
+  let seed = 7;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  for (let bx = 0; bx < 512; ) {
+    const bw = 34 + rnd() * 46, bh = 150 + rnd() * 250;
+    g.fillStyle = '#060a18'; g.fillRect(bx, 512 - bh, bw, bh);
+    for (let wy = 512 - bh + 14; wy < 500; wy += 22)
+      for (let wx = bx + 8; wx < bx + bw - 8; wx += 16)
+        if (rnd() > 0.45) { g.fillStyle = rnd() > 0.3 ? '#ffd98a' : '#8fd0ff'; g.fillRect(wx, wy, 7, 10); }
+    bx += bw + 6;
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makePosterTexture() {
+  const c = document.createElement('canvas'); c.width = 560; c.height = 760;
+  const g = c.getContext('2d');
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+
+  function paint(logoImg) {
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, 560, 760);
+    if (logoImg) {
+      const lw = 400, lh = lw * (logoImg.height / logoImg.width);
+      g.drawImage(logoImg, (560 - lw) / 2, 250, lw, lh);
+    }
+    g.textAlign = 'center';
+    g.fillStyle = '#3b7a38'; g.font = '700 34px "Segoe UI", sans-serif';
+    g.fillText('HACKATHON', 280, 470);
+    g.fillStyle = '#100f0d'; g.font = '500 26px "Segoe UI", sans-serif';
+    g.fillText(EVENT.screenDate, 280, 510);
+    tex.needsUpdate = true;
+  }
+  paint(null); // white immediately, logo when it loads
+  const img = new Image();
+  img.onload = () => paint(img);
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(SVG_LOGO);
+  return tex;
+}
+
+/* ============================================================================
+   POST-PROCESSING (bloom → tone map → output)
+   ========================================================================== */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.09, 0.4, 0.92);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+/* ============================================================================
+   TOOLTIP DOM
+   ========================================================================== */
+const tipsRoot = document.getElementById('tips');
+const tipEls = STOPS.map(s => {
+  const el = document.createElement('div');
+  el.className = 'tip';
+  el.innerHTML = `<div class="card"><span class="k">${s.k}</span>
+    <div class="t">${s.t}</div><div class="b">${s.b}</div></div><div class="dot"></div>`;
+  tipsRoot.appendChild(el);
+  return el;
+});
+
+// Tutorial step tooltip (single element, reused across the 5 steps)
+const tutTip = document.createElement('div');
+tutTip.className = 'tip';
+tutTip.innerHTML = `<div class="card"><span class="k">Tutorial · Step <span id="ttn">1</span></span>
+  <div class="t" id="ttt">…</div></div><div class="dot"></div>`;
+tipsRoot.appendChild(tutTip);
+const tutTipNum = tutTip.querySelector('#ttn');
+const tutTipText = tutTip.querySelector('#ttt');
+let tutTipOpacity = 0;
+
+const _v = new THREE.Vector3();
+function projectTip(el, anchor) {
+  _v.copy(anchor).project(camera);
+  if (_v.z > 1) { el.style.opacity = 0; return; }
+  const x = (_v.x * 0.5 + 0.5) * innerWidth;
+  const y = (-_v.y * 0.5 + 0.5) * innerHeight;
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+}
+
+/* ============================================================================
+   CAMERA TOUR STATE MACHINE
+   ========================================================================== */
+let tourActive = false;
+
+// ---- Intro pan (phase 1) ----
+let panClock = 0;                 // drives the back-and-forth sweep
+const PAN_SPEED = 0.35;           // smaller = slower pan
+const PAN_AMPLITUDE = 0.16;       // half-sweep in radians (≈ a gentle ±9°)
+const FIXED_PITCH = -0.16;        // constant downward tilt → pure left-right pan
+const CENTER_YAW = Math.atan2(-(P.monitor.x - EYE.x), -(P.monitor.z - EYE.z));
+STOPS.forEach(s => {
+  const dx = s.look.x - EYE.x, dy = s.look.y - EYE.y, dz = s.look.z - EYE.z;
+  s.yaw = Math.atan2(-dx, -dz);
+  s.pitch = Math.atan2(dy, Math.hypot(dx, dz));
+});
+
+// ---- Monitor slideshow (rules, shown during intro) ----
+let slideIdx = 0, slideTimer = 0, slideTrans = 1;
+const SLIDE_SEC = 3.8, SLIDE_FADE = 0.5;
+
+// ---- Cutscene timeline ----
+let showTime = 0;                                  // seconds since the loop began
+const STEP_DUR = 6.0;                              // seconds per tutorial step
+const INTRO_DUR = SLIDES.length * SLIDE_SEC;       // play the rules once, then teach
+const TUT_TOTAL = TUT_STEPS.length * STEP_DUR;
+const END_HOLD = 2.2;
+const TOTAL_DUR = INTRO_DUR + TUT_TOTAL + END_HOLD;
+const camPos = new THREE.Vector3().copy(EYE);      // smoothed camera position
+const TUT_EYE = new THREE.Vector3(0, 0.47, 0.64);  // dolly-in position for the tutorial
+const TUT_LOOK = new THREE.Vector3(0, 0.34, -0.40);
+const TUT_TIP_ANCHOR = new THREE.Vector3(0, 0.60, -0.40); // above the monitor
+const tipOpacity = STOPS.map(() => 0);
+
+// Look control: cinematic base orientation (from the tour) + a decaying drag offset.
+camera.rotation.order = 'YXZ';
+let baseYaw = 0, basePitch = -0.18;   // start aimed at the monitor
+let dragYaw = 0, dragPitch = 0;
+let dragging = false, lastX = 0, lastY = 0;
+
+renderer.domElement.addEventListener('pointerdown', e => {
+  dragging = true; lastX = e.clientX; lastY = e.clientY; document.body.classList.add('dragging');
+});
+addEventListener('pointerup', () => { dragging = false; document.body.classList.remove('dragging'); });
+addEventListener('pointermove', e => {
+  if (!dragging) return;
+  dragYaw   += (e.clientX - lastX) * 0.0024;
+  dragPitch += (e.clientY - lastY) * 0.0024;
+  dragYaw   = Math.max(-0.7, Math.min(0.7, dragYaw));
+  dragPitch = Math.max(-0.4, Math.min(0.4, dragPitch));
+  lastX = e.clientX; lastY = e.clientY;
+});
+
+addEventListener('keydown', e => { if (e.key === 'r' || e.key === 'R') restartTour(); });
+
+function restartTour() { resetLoop(); }
+
+function resetLoop() {
+  showTime = 0; panClock = 0;
+  slideIdx = 0; slideTimer = 0; slideTrans = 0;
+  camPos.copy(EYE); folder.visible = false;
+  drawSlide(0, 1); // put the title card back on the monitor
+}
+
+// ---- Phase 1: intro pan + rules slideshow + object tooltips ----
+function phaseIntro(dt, t) {
+  panClock += dt * PAN_SPEED;
+  camera.position.copy(EYE);
+  camera.position.x += Math.sin(t * 0.5) * 0.010;
+  camPos.copy(camera.position);              // keep in sync for a smooth handoff
+  baseYaw = CENTER_YAW + PAN_AMPLITUDE * Math.sin(panClock);
+  basePitch = FIXED_PITCH;
+  folder.visible = false;
+
+  // rules slideshow (advance every SLIDE_SEC, redraw only during the fade)
+  slideTimer += dt;
+  if (slideTimer > SLIDE_SEC) { slideIdx = (slideIdx + 1) % SLIDES.length; slideTimer = 0; slideTrans = 0; }
+  if (slideTrans < 1) { slideTrans = Math.min(1, slideTrans + dt / SLIDE_FADE); drawSlide(slideIdx, slideTrans); }
+
+  hideObjectTips(dt);
+  fadeTutTip(dt);
+}
+
+function hideObjectTips(dt) {
+  STOPS.forEach((s, i) => {
+    tipOpacity[i] += (0 - tipOpacity[i]) * (1 - Math.exp(-9 * dt));
+    tipEls[i].style.opacity = tipOpacity[i] < 0.01 ? 0 : tipOpacity[i].toFixed(3);
+  });
+}
+
+// ---- Phase 2: centered cutscene with 5 scripted steps ----
+function phaseTutorial(dt, step, stepT) {
+  // dolly in and centre on the monitor
+  camPos.lerp(TUT_EYE, 1 - Math.exp(-2.2 * dt));
+  camera.position.copy(camPos);
+  const dir = TUT_LOOK.clone().sub(camPos);
+  const tYaw = Math.atan2(-dir.x, -dir.z), tPitch = Math.atan2(dir.y, Math.hypot(dir.x, dir.z));
+  const k = 1 - Math.exp(-3 * dt);
+  baseYaw += (tYaw - baseYaw) * k; basePitch += (tPitch - basePitch) * k;
+
+  // hide the intro object tooltips
+  STOPS.forEach((s, i) => { tipOpacity[i] += (0 - tipOpacity[i]) * (1 - Math.exp(-9 * dt)); tipEls[i].style.opacity = tipOpacity[i] < 0.01 ? 0 : tipOpacity[i].toFixed(3); });
+
+  // draw the step's on-screen animation each frame
+  drawTutorial(step, stepT);
+
+  // step 2 (index 1): folder descends into the top of the monitor
+  if (step === 1) {
+    folder.visible = true;
+    if (stepT < 0.7) { const a = stepT / 0.7; folder.position.y = 0.72 - a * 0.15; folderMat.opacity = 1; }
+    else { const a = (stepT - 0.7) / 0.3; folder.position.y = 0.57 - a * 0.10; folderMat.opacity = 1 - a; }
+  } else { folder.visible = false; }
+
+  // step tooltip above the monitor (fade in/out within the step)
+  const a = Math.max(0, Math.min(Math.min(1, stepT / 0.15), Math.min(1, (1 - stepT) / 0.15)));
+  tutTipNum.textContent = step + 1;
+  tutTipText.textContent = TUT_STEPS[step];
+  projectTip(tutTip, TUT_TIP_ANCHOR);
+  tutTipOpacity += (a - tutTipOpacity) * (1 - Math.exp(-9 * dt));
+  tutTip.style.opacity = tutTip.style.opacity !== '0' ? tutTipOpacity.toFixed(3) : 0;
+}
+
+function fadeTutTip(dt) {
+  tutTipOpacity += (0 - tutTipOpacity) * (1 - Math.exp(-9 * dt));
+  tutTip.style.opacity = tutTipOpacity < 0.01 ? 0 : tutTipOpacity.toFixed(3);
+}
+
+/* ============================================================================
+   ANIMATION LOOP
+   ========================================================================== */
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  if (tourActive) {
+    showTime += dt;
+    if (showTime >= TOTAL_DUR) resetLoop();
+
+    if (showTime < INTRO_DUR) {
+      phaseIntro(dt, t);
+    } else {
+      const tt = showTime - INTRO_DUR;
+      const step = Math.min(TUT_STEPS.length - 1, Math.floor(tt / STEP_DUR));
+      const stepT = Math.min(1, (tt - step * STEP_DUR) / STEP_DUR);
+      phaseTutorial(dt, step, stepT);
+    }
+  }
+
+  // apply look: base (tour) orientation + decaying user drag offset
+  if (!dragging) { dragYaw *= 0.95; dragPitch *= 0.95; }
+  camera.rotation.set(basePitch + dragPitch, baseYaw + dragYaw, 0);
+
+  // living details
+  bulb.material.emissiveIntensity = 1.8 + Math.sin(t * 30) * 0.04; // subtle filament flicker
+  lampLight.intensity = 6 + Math.sin(t * 30) * 0.15;
+
+  safeRender();
+}
+
+let renderErrShown = false, usePlain = false;
+function safeRender() {
+  if (usePlain) { renderer.render(scene, camera); return; }
+  try {
+    composer.render();
+  } catch (e) {
+    if (!renderErrShown) { renderErrShown = true; showErr('composer.render failed → falling back to plain renderer:\n' + (e.stack || e.message)); }
+    usePlain = true;
+    try { renderer.render(scene, camera); } catch (e2) { showErr('renderer.render also failed:\n' + (e2.stack || e2.message)); }
+  }
+}
+animate();
+
+/* ============================================================================
+   RESIZE + INTRO
+   ========================================================================== */
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  bloom.setSize(innerWidth, innerHeight);
+});
+
+const introEl = document.getElementById('intro');
+const hintEl = document.getElementById('hint');
+document.getElementById('start').addEventListener('click', () => {
+  introEl.classList.add('hide');
+  tourActive = true;
+  restartTour();
+  setTimeout(() => hintEl.classList.add('show'), 600);
+  setTimeout(() => hintEl.classList.remove('show'), 6000);
+});
+</script>
+</body>
+</html>
