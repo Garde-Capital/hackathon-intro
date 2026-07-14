@@ -300,7 +300,7 @@ const bezel = box(0.86, 0.50, 0.03, matDark, 0, 0.30, -0.42);
 // Screen — canvas texture (emissive so it glows and blooms). Assigns module `screenTex`.
 makeScreenTexture();
 const screenMat = new THREE.MeshStandardMaterial({
-  map: screenTex, emissive: 0xffffff, emissiveMap: screenTex, emissiveIntensity: 0.5, roughness: 0.55,
+  map: screenTex, emissive: 0xffffff, emissiveMap: screenTex, emissiveIntensity: 0.25, roughness: 0.9, metalness: 0.0,
 });
 const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.80, 0.45), screenMat);
 screen.position.set(0, 0.30, -0.398); // in front of the bezel face to avoid z-fighting
@@ -313,9 +313,10 @@ const folder = new THREE.Group();
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.15, 0.02), folderMat);
   const tab = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.035, 0.02), folderMat);
   tab.position.set(-0.06, 0.09, 0);
-  const paper = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.13, 0.006),
+  const paper = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.17, 0.006),
     new THREE.MeshStandardMaterial({ color: 0xf4f0e6, roughness: 0.85 }));
-  paper.position.set(0.01, 0.02, 0.02); // clearly in front of the body face (no z-fighting)
+  // tucked just behind the folder's front face, taller so it peeks out the top
+  paper.position.set(0.01, 0.025, 0.004);
   folder.add(body, tab, paper);
 }
 folder.position.set(0, 0.72, -0.32); // in front of the screen plane to avoid z-fighting
@@ -640,7 +641,7 @@ function makePosterTexture() {
    ========================================================================== */
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.09, 0.4, 0.92);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.045, 0.4, 0.94);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 
