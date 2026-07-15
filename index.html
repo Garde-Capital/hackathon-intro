@@ -93,6 +93,28 @@
     position: fixed; inset: 0; pointer-events: none; z-index: 6;
     box-shadow: inset 0 0 220px 40px rgba(0,0,0,.75);
   }
+
+  /* Full-screen team welcome slides */
+  #welcome {
+    position: fixed; inset: 0; z-index: 9; opacity: 0; pointer-events: none;
+    background: radial-gradient(120% 120% at 50% 32%, #0e1a34 0%, #05060a 72%), #05060a;
+  }
+  #wbody {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2.4vh; padding: 4vh 4vw; text-align: center;
+  }
+  #welcome .wlabel {
+    font-size: clamp(13px, 2.2vw, 24px); letter-spacing: .5em; font-weight: 700;
+    color: #5aa0ff; text-transform: uppercase; padding-left: .5em;
+  }
+  #welcome .wname {
+    font-size: clamp(30px, 6.5vw, 76px); font-weight: 800; line-height: 1.02;
+    background: linear-gradient(180deg, #ffffff, #a9c4ff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    max-width: 92vw;
+  }
+  #welcome #wimg { max-height: 54vh; max-width: 82vw; object-fit: contain; }
 </style>
 </head>
 <body>
@@ -102,6 +124,15 @@
     padding:10px 14px;white-space:pre-wrap;display:none;"></div>
   <div id="vignette"></div>
   <div id="tips"></div>
+
+  <div id="welcome">
+    <div id="wbody">
+      <div class="wlabel">Welcome Team</div>
+      <div class="wname" id="wname">…</div>
+      <img id="wimg" alt="" />
+    </div>
+  </div>
+
   <div id="hint"><b>Drag</b> to look around · <b>R</b> to replay the tour</div>
 
   <div id="intro">
@@ -214,12 +245,13 @@ const STOPS = [
 ];
 STOPS.forEach(s => { s.anchor = s.anchor || s.look; });
 
-// Monitor slideshow slides: welcome each team, then a title card, then the rules.
+// Monitor slideshow slides (shown during the close-up rules phase): title + rules.
+// Team welcomes are shown full-screen (HTML overlay) before this.
 const SLIDES = [
-  ...TEAMS.map(tm => ({ type: 'welcome', name: tm.name, key: tm.key, dur: 5.2 })),
   { type: 'title', dur: 3.4 },
   ...RULES.map((r, i) => ({ type: 'rule', n: i + 1, text: r, dur: 4.0 })),
 ];
+const WELCOME_SLIDE_DUR = 5.2; // seconds per full-screen team welcome
 let screenCanvas, screenCtx, screenTex; // kept for per-slide redraws
 
 /* ============================================================================
@@ -744,18 +776,30 @@ STOPS.forEach(s => {
 let slideIdx = 0, slideTimer = 0, slideTrans = 1;
 const SLIDE_FADE = 0.5;
 
-// ---- Cutscene timeline ----
+// ---- Cutscene timeline: welcome (full-screen) → rules (close-up) → tutorial ----
 let showTime = 0;                                  // seconds since the loop began
 const STEP_DUR = 6.0;                              // seconds per tutorial step
-const INTRO_DUR = SLIDES.reduce((a, s) => a + s.dur, 0); // play welcome + rules once, then teach
+const WELCOME_DUR = TEAMS.length * WELCOME_SLIDE_DUR;
+const RULES_DUR = SLIDES.reduce((a, s) => a + s.dur, 0);
 const TUT_TOTAL = TUT_STEPS.length * STEP_DUR;
 const END_HOLD = 2.2;
-const TOTAL_DUR = INTRO_DUR + TUT_TOTAL + END_HOLD;
-const camPos = new THREE.Vector3().copy(EYE);      // smoothed camera position
-const TUT_EYE = new THREE.Vector3(0, 0.47, 0.64);  // dolly-in position for the tutorial
-const TUT_LOOK = new THREE.Vector3(0, 0.34, -0.40);
+const TOTAL_DUR = WELCOME_DUR + RULES_DUR + TUT_TOTAL + END_HOLD;
+
+const CLOSE_EYE = new THREE.Vector3(0, 0.30, 0.22);   // very close to the monitor (rules)
+const CLOSE_LOOK = new THREE.Vector3(0, 0.30, -0.398);
+const TUT_EYE = new THREE.Vector3(0, 0.55, 0.95);     // pulled-out position (tutorial)
+const TUT_LOOK = new THREE.Vector3(0, 0.26, -0.28);   // aim lower so the keyboard is in frame
 const TUT_TIP_ANCHOR = new THREE.Vector3(0, 0.60, -0.40); // above the monitor
+const camPos = new THREE.Vector3().copy(CLOSE_EYE);   // smoothed camera position
 const tipOpacity = STOPS.map(() => 0);
+let welcomePrev = -1, rulesSlidePrev = -1;
+
+// full-screen welcome overlay
+const welcomeEl = document.getElementById('welcome');
+const wbodyEl = document.getElementById('wbody');
+const wnameEl = document.getElementById('wname');
+const wimgEl = document.getElementById('wimg');
+function setWelcomeTeam(i) { wnameEl.textContent = TEAMS[i].name + '!'; wimgEl.src = MASCOTS[TEAMS[i].key] || ''; }
 
 // Look control: cinematic base orientation (from the tour) + a decaying drag offset.
 camera.rotation.order = 'YXZ';
@@ -781,31 +825,55 @@ addEventListener('keydown', e => { if (e.key === 'r' || e.key === 'R') restartTo
 function restartTour() { resetLoop(); }
 
 function resetLoop() {
-  showTime = 0; panClock = 0;
-  slideIdx = 0; slideTimer = 0; slideTrans = 0;
-  camPos.copy(EYE); folder.visible = false;
-  drawSlide(0, 1); // put the title card back on the monitor
+  showTime = 0; slideTrans = 0; welcomePrev = -1; rulesSlidePrev = -1;
+  camPos.copy(CLOSE_EYE); folder.visible = false;
+  welcomeEl.style.opacity = 0;
+  drawSlide(0, 1); // title card ready on the monitor
 }
 
-// ---- Phase 1: intro pan + rules slideshow + object tooltips ----
-function phaseIntro(dt, t) {
-  panClock += dt * PAN_SPEED;
-  camera.position.copy(EYE);
-  camera.position.x += Math.sin(t * 0.5) * 0.010;
-  camPos.copy(camera.position);              // keep in sync for a smooth handoff
-  baseYaw = CENTER_YAW + PAN_AMPLITUDE * Math.sin(panClock);
-  basePitch = FIXED_PITCH;
-  folder.visible = false;
+// Aim the base orientation at a world point (snap, or eased over dt).
+function aimAt(look, dt, snap) {
+  const dir = look.clone().sub(camera.position);
+  const tYaw = Math.atan2(-dir.x, -dir.z), tPitch = Math.atan2(dir.y, Math.hypot(dir.x, dir.z));
+  if (snap) { baseYaw = tYaw; basePitch = tPitch; }
+  else { const k = 1 - Math.exp(-3 * dt); baseYaw += (tYaw - baseYaw) * k; basePitch += (tPitch - basePitch) * k; }
+}
 
-  // slideshow: advance per-slide, redraw during the fade (welcome slides redraw
-  // every frame so a late-decoded mascot image still appears)
-  slideTimer += dt;
-  if (slideTimer > SLIDES[slideIdx].dur) { slideIdx = (slideIdx + 1) % SLIDES.length; slideTimer = 0; slideTrans = 0; }
-  if (slideTrans < 1) { slideTrans = Math.min(1, slideTrans + dt / SLIDE_FADE); drawSlide(slideIdx, slideTrans); }
-  else if (SLIDES[slideIdx].type === 'welcome') { drawSlide(slideIdx, 1); }
+// Which monitor slide is showing at `elapsed` seconds into the rules phase.
+function slideAt(elapsed) {
+  let acc = 0;
+  for (let i = 0; i < SLIDES.length; i++) {
+    if (elapsed < acc + SLIDES[i].dur) return { i, local: elapsed - acc };
+    acc += SLIDES[i].dur;
+  }
+  return { i: SLIDES.length - 1, local: SLIDES[SLIDES.length - 1].dur };
+}
 
-  hideObjectTips(dt);
-  fadeTutTip(dt);
+// ---- Phase 1: full-screen team welcomes (camera parked at the close-up) ----
+function phaseWelcome(dt) {
+  camPos.copy(CLOSE_EYE); camera.position.copy(camPos);
+  aimAt(CLOSE_LOOK, dt, true);
+  folder.visible = false; hideObjectTips(dt); fadeTutTip(dt);
+
+  // overlay backdrop stays fully opaque (dark); only the content fades → fade-to-black
+  welcomeEl.style.opacity = 1;
+  const i = Math.min(TEAMS.length - 1, Math.floor(showTime / WELCOME_SLIDE_DUR));
+  const local = showTime - i * WELCOME_SLIDE_DUR;
+  if (i !== welcomePrev) { setWelcomeTeam(i); welcomePrev = i; }
+  const fin = Math.min(1, local / 0.5), fout = Math.min(1, (WELCOME_SLIDE_DUR - local) / 0.45);
+  wbodyEl.style.opacity = Math.max(0, Math.min(fin, fout)).toFixed(3);
+}
+
+// ---- Phase 2: close-up on the monitor while the rules play ----
+function phaseRules(dt, elapsed) {
+  welcomeEl.style.opacity = 0;
+  camPos.copy(CLOSE_EYE); camera.position.copy(camPos);
+  aimAt(CLOSE_LOOK, dt, true);
+  folder.visible = false; hideObjectTips(dt); fadeTutTip(dt);
+
+  const { i, local } = slideAt(elapsed);
+  const trans = Math.min(1, local / SLIDE_FADE);
+  if (i !== rulesSlidePrev || trans < 1) { drawSlide(i, trans); rulesSlidePrev = i; }
 }
 
 function hideObjectTips(dt) {
@@ -815,18 +883,13 @@ function hideObjectTips(dt) {
   });
 }
 
-// ---- Phase 2: centered cutscene with 5 scripted steps ----
+// ---- Phase 3: dolly out to the tutorial position and play the 5 steps ----
 function phaseTutorial(dt, step, stepT) {
-  // dolly in and centre on the monitor
-  camPos.lerp(TUT_EYE, 1 - Math.exp(-2.2 * dt));
+  welcomeEl.style.opacity = 0;
+  camPos.lerp(TUT_EYE, 1 - Math.exp(-2.2 * dt)); // move out from the close-up
   camera.position.copy(camPos);
-  const dir = TUT_LOOK.clone().sub(camPos);
-  const tYaw = Math.atan2(-dir.x, -dir.z), tPitch = Math.atan2(dir.y, Math.hypot(dir.x, dir.z));
-  const k = 1 - Math.exp(-3 * dt);
-  baseYaw += (tYaw - baseYaw) * k; basePitch += (tPitch - basePitch) * k;
-
-  // hide the intro object tooltips
-  STOPS.forEach((s, i) => { tipOpacity[i] += (0 - tipOpacity[i]) * (1 - Math.exp(-9 * dt)); tipEls[i].style.opacity = tipOpacity[i] < 0.01 ? 0 : tipOpacity[i].toFixed(3); });
+  aimAt(TUT_LOOK, dt, false);
+  hideObjectTips(dt);
 
   // draw the step's on-screen animation each frame
   drawTutorial(step, stepT);
@@ -865,10 +928,12 @@ function animate() {
     showTime += dt;
     if (showTime >= TOTAL_DUR) resetLoop();
 
-    if (showTime < INTRO_DUR) {
-      phaseIntro(dt, t);
+    if (showTime < WELCOME_DUR) {
+      phaseWelcome(dt);
+    } else if (showTime < WELCOME_DUR + RULES_DUR) {
+      phaseRules(dt, showTime - WELCOME_DUR);
     } else {
-      const tt = showTime - INTRO_DUR;
+      const tt = showTime - WELCOME_DUR - RULES_DUR;
       const step = Math.min(TUT_STEPS.length - 1, Math.floor(tt / STEP_DUR));
       const stepT = Math.min(1, (tt - step * STEP_DUR) / STEP_DUR);
       phaseTutorial(dt, step, stepT);
